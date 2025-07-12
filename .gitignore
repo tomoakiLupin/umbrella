@@ -142,6 +142,17 @@ config.ini
 admin_data.json
 logs/
 
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+owner_channel.db
+
+# 备份文件
+*.backup
+owner_channel_data.json.backup
+admin_data.json.backup
+
 # 临时文件
 *.tmp
 *.temp

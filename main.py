@@ -4,12 +4,13 @@ import asyncio
 import sys
 import os
 
-# 添加src目录到Python路径
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# 不再需要手动添加src目录到Python路径，使用相对导入
 
-from config import Config
-from logger import Logger
-from admin_manager import AdminManager
+from src.core.config import Config
+from src.core.logger import Logger
+from src.managers.admin_manager import AdminManager
+from src.managers.owner_channel_manager import OwnerChannelManager
+from src.core.database import DatabaseManager
 
 class DiscordBot(commands.Bot):
     def __init__(self):
@@ -41,6 +42,9 @@ class DiscordBot(commands.Bot):
         # 初始化管理员管理器
         self.admin_manager = AdminManager(self.config, self.logger_manager)
         
+        # 初始化服主通道管理器
+        self.owner_channel_manager = OwnerChannelManager(self.config, self.logger_manager)
+        
         # 设置机器人意图
         intents = discord.Intents.default()
         intents.message_content = True
@@ -59,8 +63,12 @@ class DiscordBot(commands.Bot):
         """机器人启动时的设置"""
         try:
             # 加载命令模块
-            await self.load_extension('commands')
+            await self.load_extension('src.commands.commands')
             self.logger.info("命令模块加载完成")
+            
+            # 加载服主通道命令模块
+            await self.load_extension('src.commands.owner_channel_commands')
+            self.logger.info("服主通道命令模块加载完成")
             
             # 同步斜杠命令
             synced = await self.tree.sync()
