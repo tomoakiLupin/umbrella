@@ -119,16 +119,17 @@ class DiscordBot(commands.Bot):
     
     async def on_message(self, message):
         """消息事件处理 - 包含消息转发逻辑"""
-        # 忽略机器人自己的消息，防止无限循环
-        if message.author.bot:
+        # 只忽略自己的消息，防止无限循环
+        if message.author.id == self.user.id:
             return
         
-        # 处理消息转发
+        # 处理消息转发（包括其他机器人的消息）
         if hasattr(self, 'message_forward_manager'):
             await self.handle_message_forward(message)
         
-        # 处理命令
-        await self.process_commands(message)
+        # 处理命令（只处理非机器人用户的命令）
+        if not message.author.bot:
+            await self.process_commands(message)
     
     async def handle_message_forward(self, message):
         """处理消息转发"""
