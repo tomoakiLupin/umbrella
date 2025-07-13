@@ -10,6 +10,7 @@ from src.core.config import Config
 from src.core.logger import Logger
 from src.managers.admin_manager import AdminManager
 from src.managers.owner_channel_manager import OwnerChannelManager
+from src.managers.message_forward_manager import MessageForwardManager
 from src.core.database import DatabaseManager
 
 class DiscordBot(commands.Bot):
@@ -45,6 +46,9 @@ class DiscordBot(commands.Bot):
         # 初始化服主通道管理器
         self.owner_channel_manager = OwnerChannelManager(self.config, self.logger_manager)
         
+        # 初始化消息转发管理器
+        self.message_forward_manager = MessageForwardManager(self.config, self.logger_manager)
+        
         # 设置机器人意图
         intents = discord.Intents.default()
         intents.message_content = True
@@ -69,6 +73,10 @@ class DiscordBot(commands.Bot):
             # 加载服主通道命令模块
             await self.load_extension('src.commands.owner_channel_commands')
             self.logger.info("服主通道命令模块加载完成")
+            
+            # 加载消息转发命令模块
+            await self.load_extension('src.commands.message_forward_commands')
+            self.logger.info("消息转发命令模块加载完成")
             
             # 同步斜杠命令
             synced = await self.tree.sync()
@@ -108,6 +116,100 @@ class DiscordBot(commands.Bot):
         else:
             self.logger.error(f"命令错误：{error}")
             await ctx.send("❌ 执行命令时发生错误！")
+    
+    async def on_message(self, message):
+        """消息事件处理 - 包含消息转发逻辑"""
+        # 忽略机器人自己的消息，防止无限循环
+        if message.author.bot:
+            return
+        
+        # 处理消息转发
+        if hasattr(self, 'message_forward_manager'):
+            await self.handle_message_forward(message)
+        
+        # 处理命令
+        await self.process_commands(message)
+    
+    async def handle_message_forward(self, message):
+        """处理消息转发"""
+        try:
+            # 获取源频道的转发目标
+            targets = self.message_forward_manager.get_forward_targets(message.channel.id)
+            
+            for target_channel_id, target_guild_id, rule_id in targets:
+                try:
+                    # 获取目标频道
+                    target_channel = self.get_channel(target_channel_id)
+                    if not target_channel:
+                        continue
+                    
+                    # 检查机器人权限
+                    if not target_channel.permissions_for(target_channel.guild.me).send_messages:
+                        continue
+                    
+                    # 创建转发消息
+                    embed = discord.Embed(
+                        description=message.content,
+                        color=0x0099ff,
+                        timestamp=message.created_at
+                    )
+                    
+                    # 设置作者信息
+                    embed.set_author(
+                        name=f"{message.author.display_name}",
+                        icon_url=message.author.display_avatar.url
+                    )
+                    
+                    # 添加来源信息
+                    source_info = f"#{message.channel.name}"
+                    if message.guild:
+                        source_info += f" ({message.guild.name})"
+                    embed.set_footer(text=f"来自: {source_info}")
+                    
+                    # 处理附件
+                    files = []
+                    if message.attachments:
+                        attachment_info = []
+                        for attachment in message.attachments[:5]:  # 限制5个附件
+                            try:
+                                # 对于图片，直接在embed中显示第一张
+                                if attachment.content_type and attachment.content_type.startswith('image/'):
+                                    if not embed.image and len(attachment_info) == 0:
+                                        embed.set_image(url=attachment.url)
+                                    attachment_info.append(f"🖼️ [{attachment.filename}]({attachment.url})")
+                                else:
+                                    attachment_info.append(f"📎 [{attachment.filename}]({attachment.url})")
+                            except:
+                                attachment_info.append(f"📎 {attachment.filename}")
+                        
+                        if attachment_info:
+                            embed.add_field(
+                                name="📎 附件",
+                                value="\n".join(attachment_info),
+                                inline=False
+                            )
+                    
+                    # 处理回复
+                    if message.reference and message.reference.message_id:
+                        try:
+                            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+                            reply_content = referenced_msg.content[:100] + "..." if len(referenced_msg.content) > 100 else referenced_msg.content
+                            embed.add_field(
+                                name="💬 回复",
+                                value=f"回复 {referenced_msg.author.display_name}: {reply_content}",
+                                inline=False
+                            )
+                        except:
+                            pass
+                    
+                    # 发送转发消息
+                    await target_channel.send(embed=embed)
+                    
+                except Exception as e:
+                    self.logger.error(f"转发消息到频道 {target_channel_id} 时发生错误：{e}")
+                    
+        except Exception as e:
+            self.logger.error(f"处理消息转发时发生错误：{e}")
     
     async def on_error(self, event, *args, **kwargs):
         """全局错误处理"""
