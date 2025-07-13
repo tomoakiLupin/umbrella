@@ -147,63 +147,40 @@ class DiscordBot(commands.Bot):
                     if not target_channel.permissions_for(target_channel.guild.me).send_messages:
                         continue
                     
-                    # 创建转发消息
-                    embed = discord.Embed(
-                        description=message.content,
-                        color=0x0099ff,
-                        timestamp=message.created_at
-                    )
-                    
-                    # 设置作者信息
-                    embed.set_author(
-                        name=f"{message.author.display_name}",
-                        icon_url=message.author.display_avatar.url
-                    )
-                    
-                    # 添加来源信息
-                    source_info = f"#{message.channel.name}"
-                    if message.guild:
-                        source_info += f" ({message.guild.name})"
-                    embed.set_footer(text=f"来自: {source_info}")
+                    # 转发消息内容和embeds
+                    forward_content = message.content if message.content else None
+                    forward_embeds = message.embeds if message.embeds else None
                     
                     # 处理附件
-                    files = []
+                    attachment_links = []
                     if message.attachments:
-                        attachment_info = []
-                        for attachment in message.attachments[:5]:  # 限制5个附件
-                            try:
-                                # 对于图片，直接在embed中显示第一张
-                                if attachment.content_type and attachment.content_type.startswith('image/'):
-                                    if not embed.image and len(attachment_info) == 0:
-                                        embed.set_image(url=attachment.url)
-                                    attachment_info.append(f"🖼️ [{attachment.filename}]({attachment.url})")
-                                else:
-                                    attachment_info.append(f"📎 [{attachment.filename}]({attachment.url})")
-                            except:
-                                attachment_info.append(f"📎 {attachment.filename}")
-                        
-                        if attachment_info:
-                            embed.add_field(
-                                name="📎 附件",
-                                value="\n".join(attachment_info),
-                                inline=False
-                            )
-                    
-                    # 处理回复
-                    if message.reference and message.reference.message_id:
-                        try:
-                            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
-                            reply_content = referenced_msg.content[:100] + "..." if len(referenced_msg.content) > 100 else referenced_msg.content
-                            embed.add_field(
-                                name="💬 回复",
-                                value=f"回复 {referenced_msg.author.display_name}: {reply_content}",
-                                inline=False
-                            )
-                        except:
-                            pass
+                        for attachment in message.attachments:
+                            attachment_links.append(attachment.url)
                     
                     # 发送转发消息
-                    await target_channel.send(embed=embed)
+                    if forward_embeds:
+                        # 如果有embed，转发embed
+                        if forward_content or attachment_links:
+                            # 如果还有文本内容或附件，一起发送
+                            content_to_send = forward_content or ""
+                            if attachment_links:
+                                if content_to_send:
+                                    content_to_send += "\n" + "\n".join(attachment_links)
+                                else:
+                                    content_to_send = "\n".join(attachment_links)
+                            await target_channel.send(content=content_to_send, embeds=forward_embeds)
+                        else:
+                            # 只有embed
+                            await target_channel.send(embeds=forward_embeds)
+                    elif forward_content or attachment_links:
+                        # 没有embed但有文本或附件
+                        content_to_send = forward_content or ""
+                        if attachment_links:
+                            if content_to_send:
+                                content_to_send += "\n" + "\n".join(attachment_links)
+                            else:
+                                content_to_send = "\n".join(attachment_links)
+                        await target_channel.send(content_to_send)
                     
                 except Exception as e:
                     self.logger.error(f"转发消息到频道 {target_channel_id} 时发生错误：{e}")
