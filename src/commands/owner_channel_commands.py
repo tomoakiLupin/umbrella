@@ -45,8 +45,11 @@ class OwnerChannelCommands(commands.Cog):
             await interaction.response.send_message("❌ 找不到海龟汤身份组！", ephemeral=True)
             return
         
-        # 发送@身份组消息
-        await interaction.response.send_message(f"🐢 {role.mention} 有人召唤你们！")
+        # 先发送仅个人可见的确认消息
+        await interaction.response.send_message("✅ 已召唤海龟汤身份组！", ephemeral=True)
+        
+        # 然后bot单独发送一条普通消息@身份组
+        await interaction.followup.send(f"🐢 {role.mention} 有人召唤你们！")
         
         self.logger.info(f"用户 {interaction.user.id} 召唤了海龟汤身份组")
 
