@@ -50,6 +50,40 @@ class OwnerChannelCommands(commands.Cog):
         
         self.logger.info(f"用户 {interaction.user.id} 召唤了海龟汤身份组")
 
+    @app_commands.command(name="获取海龟汤", description="获取或移除海龟汤身份组")
+    async def get_turtle_soup_role(self, interaction: discord.Interaction):
+        TURTLE_SOUP_ROLE_ID = 1395036452416524328
+        
+        # 获取身份组
+        role = interaction.guild.get_role(TURTLE_SOUP_ROLE_ID)
+        if not role:
+            await interaction.response.send_message("❌ 找不到海龟汤身份组！", ephemeral=True)
+            return
+        
+        # 检查用户是否已有该身份组
+        if role in interaction.user.roles:
+            # 移除身份组
+            try:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message("✅ 已成功移除海龟汤身份组！", ephemeral=True)
+                self.logger.info(f"用户 {interaction.user.id} 移除了海龟汤身份组")
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ 机器人没有权限移除该身份组！", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message(f"❌ 移除身份组时发生错误：{str(e)}", ephemeral=True)
+                self.logger.error(f"移除海龟汤身份组时发生错误：{e}")
+        else:
+            # 添加身份组
+            try:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ 已成功获得海龟汤身份组！", ephemeral=True)
+                self.logger.info(f"用户 {interaction.user.id} 获得了海龟汤身份组")
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ 机器人没有权限添加该身份组！", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message(f"❌ 添加身份组时发生错误：{str(e)}", ephemeral=True)
+                self.logger.error(f"添加海龟汤身份组时发生错误：{e}")
+
     @app_commands.command(name="创建服主通道面板", description="创建服主通道面板（仅超级管理员可用）")
     @app_commands.describe(
         面板频道="放置服主通道面板的频道",
