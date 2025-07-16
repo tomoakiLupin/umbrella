@@ -35,6 +35,21 @@ class OwnerChannelCommands(commands.Cog):
         self.owner_channel_manager = bot.owner_channel_manager
         self.logger = bot.logger
 
+    @app_commands.command(name="召唤海龟汤", description="召唤海龟汤身份组的用户")
+    async def summon_turtle_soup(self, interaction: discord.Interaction):
+        TURTLE_SOUP_ROLE_ID = 1395036452416524328
+        
+        # 获取身份组
+        role = interaction.guild.get_role(TURTLE_SOUP_ROLE_ID)
+        if not role:
+            await interaction.response.send_message("❌ 找不到海龟汤身份组！", ephemeral=True)
+            return
+        
+        # 发送@身份组消息
+        await interaction.response.send_message(f"🐢 {role.mention} 有人召唤你们！")
+        
+        self.logger.info(f"用户 {interaction.user.id} 召唤了海龟汤身份组")
+
     @app_commands.command(name="创建服主通道面板", description="创建服主通道面板（仅超级管理员可用）")
     @app_commands.describe(
         面板频道="放置服主通道面板的频道",
