@@ -204,6 +204,38 @@ class AdminCommands(commands.Cog):
         
         self.logger.info(f"管理员 {user_id} 请求创建频道：{频道名称}，指定用户：{指定用户.id}")
     
+    @app_commands.command(name="角色管理面板", description="创建角色管理面板，用户可以领取或移除指定身份组（仅管理员可用）")
+    @app_commands.describe(身份组="要管理的身份组")
+    async def role_management_panel(self, interaction: discord.Interaction, 身份组: discord.Role):
+        user_id = interaction.user.id
+        member_roles = [role.id for role in interaction.user.roles]
+        
+        if not self.admin_manager.can_use_admin_commands(user_id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此命令！", ephemeral=True)
+            return
+        
+        # 检查机器人是否有权限管理该角色
+        if 身份组.position >= interaction.guild.me.top_role.position:
+            await interaction.response.send_message("❌ 机器人无法管理该角色，请确保机器人的角色位置高于目标角色！", ephemeral=True)
+            return
+        
+        # 创建角色管理面板
+        view = RoleManagementView(身份组, self.logger)
+        
+        embed = discord.Embed(
+            title="🎭 角色管理面板",
+            description=f"**管理角色：** {身份组.mention}\n\n点击下方按钮来领取或移除该身份组",
+            color=身份组.color if 身份组.color.value != 0 else 0x0099ff
+        )
+        
+        embed.add_field(name="🔹 领取角色", value="点击「领取角色」按钮来获得该身份组", inline=False)
+        embed.add_field(name="🔸 移除角色", value="点击「移除角色」按钮来移除该身份组", inline=False)
+        embed.set_footer(text=f"面板创建者：{interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        
+        self.logger.info(f"管理员 {user_id} 创建了角色管理面板：{身份组.name} ({身份组.id})")
+    
     def parse_message_link(self, link: str) -> Optional[tuple]:
         """解析Discord帖子/消息链接"""
         # 论坛帖子链接格式: https://discord.com/channels/guild_id/thread_id
@@ -471,6 +503,74 @@ class CreateChannelConfirmView(discord.ui.View):
                 pass
             except:
                 pass
+
+class RoleManagementView(discord.ui.View):
+    def __init__(self, role, logger):
+        super().__init__(timeout=None)  # 持久化视图，不会超时
+        self.role = role
+        self.logger = logger
+    
+    @discord.ui.button(label="领取角色", style=discord.ButtonStyle.primary, emoji="➕")
+    async def add_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = interaction.user
+        member = interaction.guild.get_member(user.id)
+        
+        if not member:
+            await interaction.response.send_message("❌ 无法找到您的成员信息！", ephemeral=True)
+            return
+        
+        # 检查用户是否已经拥有该角色
+        if self.role in member.roles:
+            await interaction.response.send_message(f"⚠️ 您已经拥有 {self.role.mention} 角色了！", ephemeral=True)
+            return
+        
+        # 检查机器人是否有权限管理该角色
+        if self.role.position >= interaction.guild.me.top_role.position:
+            await interaction.response.send_message("❌ 机器人无法管理该角色，请联系管理员！", ephemeral=True)
+            return
+        
+        try:
+            # 添加角色
+            await member.add_roles(self.role)
+            await interaction.response.send_message(f"✅ 成功为您添加了 {self.role.mention} 角色！", ephemeral=True)
+            self.logger.info(f"用户 {user.id} ({user.name}) 通过角色管理面板添加了角色 {self.role.name} ({self.role.id})")
+            
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 机器人没有权限管理该角色！", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"❌ 添加角色时发生错误：{str(e)}", ephemeral=True)
+            self.logger.error(f"添加角色时发生错误：{e}")
+    
+    @discord.ui.button(label="移除角色", style=discord.ButtonStyle.secondary, emoji="➖")
+    async def remove_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = interaction.user
+        member = interaction.guild.get_member(user.id)
+        
+        if not member:
+            await interaction.response.send_message("❌ 无法找到您的成员信息！", ephemeral=True)
+            return
+        
+        # 检查用户是否拥有该角色
+        if self.role not in member.roles:
+            await interaction.response.send_message(f"⚠️ 您没有 {self.role.mention} 角色！", ephemeral=True)
+            return
+        
+        # 检查机器人是否有权限管理该角色
+        if self.role.position >= interaction.guild.me.top_role.position:
+            await interaction.response.send_message("❌ 机器人无法管理该角色，请联系管理员！", ephemeral=True)
+            return
+        
+        try:
+            # 移除角色
+            await member.remove_roles(self.role)
+            await interaction.response.send_message(f"✅ 成功为您移除了 {self.role.mention} 角色！", ephemeral=True)
+            self.logger.info(f"用户 {user.id} ({user.name}) 通过角色管理面板移除了角色 {self.role.name} ({self.role.id})")
+            
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 机器人没有权限管理该角色！", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f"❌ 移除角色时发生错误：{str(e)}", ephemeral=True)
+            self.logger.error(f"移除角色时发生错误：{e}")
 
 async def setup(bot):
     await bot.add_cog(AdminCommands(bot))
