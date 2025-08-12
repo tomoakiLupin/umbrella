@@ -39,7 +39,7 @@ class AdminManager:
         return user_id == self.super_admin_id
     
     def is_admin(self, user_id: int) -> bool:
-        return user_id in self.admin_roles or self.is_super_admin(user_id)
+        return self.is_super_admin(user_id)
     
     def add_admin_role(self, user_id: int, role_id: int) -> bool:
         if not self.is_super_admin(user_id):

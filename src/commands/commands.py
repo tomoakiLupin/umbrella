@@ -165,7 +165,7 @@ class AdminCommands(commands.Cog):
         指定用户: discord.Member,
         分类: discord.CategoryChannel,
         给予管理权限: bool = False,
-        nsfw频道: bool = False
+        nsfw频道: bool = True
     ):
         user_id = interaction.user.id
         member_roles = [role.id for role in interaction.user.roles]
@@ -235,6 +235,81 @@ class AdminCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view)
         
         self.logger.info(f"管理员 {user_id} 创建了角色管理面板：{身份组.name} ({身份组.id})")
+    
+    @app_commands.command(name="归档频道", description="清除该频道的所有可视权限，使其对everyone不可见（需要另一位管理员确认）")
+    @app_commands.describe(频道="要归档的频道")
+    async def archive_channel(self, interaction: discord.Interaction, 频道: discord.TextChannel = None):
+        user_id = interaction.user.id
+        member_roles = [role.id for role in interaction.user.roles]
+        
+        if not self.admin_manager.can_use_admin_commands(user_id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此命令！", ephemeral=True)
+            return
+        
+        # 如果没有指定频道，则使用当前频道
+        target_channel = 频道 if 频道 else interaction.channel
+        
+        # 检查机器人是否有权限管理该频道
+        if not target_channel.permissions_for(interaction.guild.me).manage_channels:
+            await interaction.response.send_message("❌ 机器人没有管理该频道的权限！", ephemeral=True)
+            return
+        
+        # 创建确认视图
+        view = ArchiveChannelConfirmView(self, user_id, target_channel)
+        
+        embed = discord.Embed(
+            title="📦 归档频道确认",
+            description=f"**发起人：** {interaction.user.mention}\n**频道：** {target_channel.mention}",
+            color=0x888888
+        )
+        embed.add_field(name="🔒 操作说明", value="该操作会清除频道的所有可视权限，使其对@everyone不可见", inline=False)
+        embed.add_field(name="⚠️ 注意", value="需要另一位管理员点击确认按钮才能归档频道", inline=False)
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        
+        self.logger.info(f"管理员 {user_id} 请求归档频道：{target_channel.name} ({target_channel.id})")
+    
+    @app_commands.command(name="移动频道", description="将频道移动到指定的分类下（需要另一位管理员确认）")
+    @app_commands.describe(
+        频道="要移动的频道",
+        分类="目标分类"
+    )
+    async def move_channel(self, interaction: discord.Interaction, 频道: discord.TextChannel, 分类: discord.CategoryChannel = None):
+        user_id = interaction.user.id
+        member_roles = [role.id for role in interaction.user.roles]
+        
+        if not self.admin_manager.can_use_admin_commands(user_id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此命令！", ephemeral=True)
+            return
+        
+        # 检查机器人是否有权限管理该频道
+        if not 频道.permissions_for(interaction.guild.me).manage_channels:
+            await interaction.response.send_message("❌ 机器人没有管理该频道的权限！", ephemeral=True)
+            return
+        
+        # 如果指定了分类，检查机器人是否有权限在该分类下操作
+        if 分类 and not 分类.permissions_for(interaction.guild.me).manage_channels:
+            await interaction.response.send_message("❌ 机器人没有在该分类下管理频道的权限！", ephemeral=True)
+            return
+        
+        # 创建确认视图
+        view = MoveChannelConfirmView(self, user_id, 频道, 分类)
+        
+        old_category = 频道.category.name if 频道.category else "无分类"
+        new_category = 分类.name if 分类 else "无分类"
+        
+        embed = discord.Embed(
+            title="📁 移动频道确认",
+            description=f"**发起人：** {interaction.user.mention}\n**频道：** {频道.mention}",
+            color=0x0099ff
+        )
+        embed.add_field(name="📂 原分类", value=old_category, inline=True)
+        embed.add_field(name="📂 新分类", value=new_category, inline=True)
+        embed.add_field(name="⚠️ 注意", value="需要另一位管理员点击确认按钮才能移动频道", inline=False)
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        
+        self.logger.info(f"管理员 {user_id} 请求移动频道：{频道.name} ({频道.id}) 从 '{old_category}' 到 '{new_category}'")
     
     def parse_message_link(self, link: str) -> Optional[tuple]:
         """解析Discord帖子/消息链接"""
@@ -388,7 +463,7 @@ class DeleteConfirmView(discord.ui.View):
 
 class CreateChannelConfirmView(discord.ui.View):
     def __init__(self, commands_cog, requester_id, channel_name, target_user, category, give_manage_permission, is_nsfw):
-        super().__init__(timeout=300)  # 5分钟超时
+        super().__init__(timeout=None)  # 不超时
         self.commands_cog = commands_cog
         self.requester_id = requester_id
         self.channel_name = channel_name
@@ -490,19 +565,6 @@ class CreateChannelConfirmView(discord.ui.View):
         
         await interaction.response.edit_message(embed=cancel_embed, view=None)
         self.commands_cog.logger.info(f"管理员 {user_id} 取消了创建频道请求：{self.channel_name}")
-    
-    async def on_timeout(self):
-        if not self.confirmed:
-            timeout_embed = discord.Embed(
-                title="⏰ 创建请求超时",
-                description="创建请求已超时，操作已取消。",
-                color=0x888888
-            )
-            try:
-                # 需要获取消息对象来编辑，但由于没有存储，这里可能会失败
-                pass
-            except:
-                pass
 
 class RoleManagementView(discord.ui.View):
     def __init__(self, role, logger):
@@ -571,6 +633,147 @@ class RoleManagementView(discord.ui.View):
         except discord.HTTPException as e:
             await interaction.response.send_message(f"❌ 移除角色时发生错误：{str(e)}", ephemeral=True)
             self.logger.error(f"移除角色时发生错误：{e}")
+
+class ArchiveChannelConfirmView(discord.ui.View):
+    def __init__(self, commands_cog, requester_id, target_channel):
+        super().__init__(timeout=None)  # 不超时
+        self.commands_cog = commands_cog
+        self.requester_id = requester_id
+        self.target_channel = target_channel
+        self.confirmed = False
+    
+    @discord.ui.button(label="确认归档", style=discord.ButtonStyle.secondary, emoji="📦")
+    async def confirm_archive(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        member_roles = [role.id for role in interaction.user.roles]
+        
+        # 检查是否是管理员
+        if not self.commands_cog.admin_manager.can_use_admin_commands(user_id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此操作！", ephemeral=True)
+            return
+        
+        # 检查是否是发起人本人
+        if user_id == self.requester_id:
+            await interaction.response.send_message("❌ 您不能确认自己发起的归档请求！", ephemeral=True)
+            return
+        
+        # 执行归档
+        try:
+            # 获取当前权限覆盖
+            overwrites = self.target_channel.overwrites.copy()
+            
+            # 设置@everyone不可见
+            overwrites[interaction.guild.default_role] = discord.PermissionOverwrite(read_messages=False)
+            
+            # 应用权限覆盖
+            await self.target_channel.edit(overwrites=overwrites)
+            
+            success_embed = discord.Embed(
+                title="✅ 频道归档成功",
+                description=f"**发起人：** <@{self.requester_id}>\n**确认人：** {interaction.user.mention}\n**频道：** {self.target_channel.mention}",
+                color=0x00ff00
+            )
+            success_embed.add_field(name="🔒 权限变更", value="该频道已对所有用户隐藏（@everyone不可见）", inline=False)
+            
+            await interaction.response.edit_message(embed=success_embed, view=None)
+            
+            self.commands_cog.logger.info(f"管理员 {user_id} 确认归档频道：{self.target_channel.name} ({self.target_channel.id})")
+            self.confirmed = True
+            
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 机器人没有权限修改该频道的权限！", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 归档频道时发生错误：{str(e)}", ephemeral=True)
+            self.commands_cog.logger.error(f"归档频道时发生错误：{e}")
+    
+    @discord.ui.button(label="取消", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel_archive(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        member_roles = [role.id for role in interaction.user.roles]
+        
+        # 检查是否是管理员
+        if not self.commands_cog.admin_manager.can_use_admin_commands(user_id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此操作！", ephemeral=True)
+            return
+        
+        cancel_embed = discord.Embed(
+            title="❌ 归档请求已取消",
+            description=f"**发起人：** <@{self.requester_id}>\n**取消人：** {interaction.user.mention}",
+            color=0xff0000
+        )
+        
+        await interaction.response.edit_message(embed=cancel_embed, view=None)
+        self.commands_cog.logger.info(f"管理员 {user_id} 取消了归档频道请求：{self.target_channel.name}")
+
+class MoveChannelConfirmView(discord.ui.View):
+    def __init__(self, commands_cog, requester_id, target_channel, target_category):
+        super().__init__(timeout=None)  # 不超时
+        self.commands_cog = commands_cog
+        self.requester_id = requester_id
+        self.target_channel = target_channel
+        self.target_category = target_category
+        self.confirmed = False
+    
+    @discord.ui.button(label="确认移动", style=discord.ButtonStyle.primary, emoji="📁")
+    async def confirm_move(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        member_roles = [role.id for role in interaction.user.roles]
+        
+        # 检查是否是管理员
+        if not self.commands_cog.admin_manager.can_use_admin_commands(user_id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此操作！", ephemeral=True)
+            return
+        
+        # 检查是否是发起人本人
+        if user_id == self.requester_id:
+            await interaction.response.send_message("❌ 您不能确认自己发起的移动请求！", ephemeral=True)
+            return
+        
+        # 执行移动
+        try:
+            old_category = self.target_channel.category.name if self.target_channel.category else "无分类"
+            new_category = self.target_category.name if self.target_category else "无分类"
+            
+            # 移动频道到指定分类
+            await self.target_channel.edit(category=self.target_category)
+            
+            success_embed = discord.Embed(
+                title="✅ 频道移动成功",
+                description=f"**发起人：** <@{self.requester_id}>\n**确认人：** {interaction.user.mention}\n**频道：** {self.target_channel.mention}",
+                color=0x00ff00
+            )
+            success_embed.add_field(name="📂 原分类", value=old_category, inline=True)
+            success_embed.add_field(name="📂 新分类", value=new_category, inline=True)
+            
+            await interaction.response.edit_message(embed=success_embed, view=None)
+            
+            self.commands_cog.logger.info(f"管理员 {user_id} 确认移动频道：{self.target_channel.name} ({self.target_channel.id}) 从 '{old_category}' 到 '{new_category}'")
+            self.confirmed = True
+            
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 机器人没有权限移动该频道！", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 移动频道时发生错误：{str(e)}", ephemeral=True)
+            self.commands_cog.logger.error(f"移动频道时发生错误：{e}")
+    
+    @discord.ui.button(label="取消", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel_move(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        member_roles = [role.id for role in interaction.user.roles]
+        
+        # 检查是否是管理员
+        if not self.commands_cog.admin_manager.can_use_admin_commands(user_id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此操作！", ephemeral=True)
+            return
+        
+        cancel_embed = discord.Embed(
+            title="❌ 移动请求已取消",
+            description=f"**发起人：** <@{self.requester_id}>\n**取消人：** {interaction.user.mention}",
+            color=0xff0000
+        )
+        
+        await interaction.response.edit_message(embed=cancel_embed, view=None)
+        self.commands_cog.logger.info(f"管理员 {user_id} 取消了移动频道请求：{self.target_channel.name}")
 
 async def setup(bot):
     await bot.add_cog(AdminCommands(bot))
