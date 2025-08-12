@@ -150,13 +150,12 @@ class AdminCommands(commands.Cog):
         
         self.logger.info(f"管理员 {user_id} 请求删除帖子：{帖子链接}")
     
-    @app_commands.command(name="创建频道", description="创建一个仅限管理员和指定用户可见的频道（需要另一位管理员确认）")
+    @app_commands.command(name="创建频道", description="创建一个仅限管理员和指定用户可见的NSFW频道（需要另一位管理员确认）")
     @app_commands.describe(
         频道名称="新频道的名称",
         指定用户="可以访问该频道的用户",
         分类="频道所在的分类",
-        给予管理权限="是否给予指定用户管理该频道的权限",
-        nsfw频道="是否为NSFW（成人内容）频道"
+        给予管理权限="是否给予指定用户管理该频道的权限"
     )
     async def create_channel(
         self, 
@@ -164,8 +163,7 @@ class AdminCommands(commands.Cog):
         频道名称: str,
         指定用户: discord.Member,
         分类: discord.CategoryChannel,
-        给予管理权限: bool = False,
-        nsfw频道: bool = True
+        给予管理权限: bool = False
     ):
         user_id = interaction.user.id
         member_roles = [role.id for role in interaction.user.roles]
@@ -181,7 +179,7 @@ class AdminCommands(commands.Cog):
         
         # 创建确认视图
         view = CreateChannelConfirmView(
-            self, user_id, 频道名称, 指定用户, 分类, 给予管理权限, nsfw频道
+            self, user_id, 频道名称, 指定用户, 分类, 给予管理权限
         )
         
         embed = discord.Embed(
@@ -195,8 +193,7 @@ class AdminCommands(commands.Cog):
         embed.add_field(name="🔧 权限设置", value=permission_text, inline=False)
         
         # NSFW设置信息
-        nsfw_text = "🔞 是，这是一个NSFW频道" if nsfw频道 else "✅ 否，这是普通频道"
-        embed.add_field(name="🔞 NSFW设置", value=nsfw_text, inline=False)
+        embed.add_field(name="🔞 频道类型", value="🔞 这是一个NSFW频道", inline=False)
         
         embed.add_field(name="⚠️ 注意", value="需要另一位管理员点击确认按钮才能创建频道", inline=False)
         
@@ -262,7 +259,7 @@ class AdminCommands(commands.Cog):
             description=f"**发起人：** {interaction.user.mention}\n**频道：** {target_channel.mention}",
             color=0x888888
         )
-        embed.add_field(name="🔒 操作说明", value="该操作会清除频道的所有可视权限，使其对@everyone不可见", inline=False)
+        embed.add_field(name="🔒 操作说明", value="该操作会清除频道的所有权限覆盖，使频道完全隐藏（仅机器人可见）", inline=False)
         embed.add_field(name="⚠️ 注意", value="需要另一位管理员点击确认按钮才能归档频道", inline=False)
         
         await interaction.response.send_message(embed=embed, view=view)
@@ -462,7 +459,7 @@ class DeleteConfirmView(discord.ui.View):
                 pass
 
 class CreateChannelConfirmView(discord.ui.View):
-    def __init__(self, commands_cog, requester_id, channel_name, target_user, category, give_manage_permission, is_nsfw):
+    def __init__(self, commands_cog, requester_id, channel_name, target_user, category, give_manage_permission):
         super().__init__(timeout=None)  # 不超时
         self.commands_cog = commands_cog
         self.requester_id = requester_id
@@ -470,7 +467,6 @@ class CreateChannelConfirmView(discord.ui.View):
         self.target_user = target_user
         self.category = category
         self.give_manage_permission = give_manage_permission
-        self.is_nsfw = is_nsfw
         self.confirmed = False
     
     @discord.ui.button(label="确认创建", style=discord.ButtonStyle.primary, emoji="📁")
@@ -519,7 +515,7 @@ class CreateChannelConfirmView(discord.ui.View):
                 name=self.channel_name,
                 category=self.category,
                 overwrites=overwrites,
-                nsfw=self.is_nsfw
+                nsfw=True
             )
             
             success_embed = discord.Embed(
@@ -533,8 +529,7 @@ class CreateChannelConfirmView(discord.ui.View):
             success_embed.add_field(name="🔧 权限", value=permission_text, inline=False)
             
             # NSFW信息
-            nsfw_text = "🔞 NSFW频道" if self.is_nsfw else "✅ 普通频道"
-            success_embed.add_field(name="🔞 频道类型", value=nsfw_text, inline=False)
+            success_embed.add_field(name="🔞 频道类型", value="🔞 NSFW频道", inline=False)
             
             await interaction.response.edit_message(embed=success_embed, view=None)
             
@@ -659,21 +654,29 @@ class ArchiveChannelConfirmView(discord.ui.View):
         
         # 执行归档
         try:
-            # 获取当前权限覆盖
-            overwrites = self.target_channel.overwrites.copy()
+            # 清除所有权限覆盖，只保留机器人自身权限
+            new_overwrites = {}
             
             # 设置@everyone不可见
-            overwrites[interaction.guild.default_role] = discord.PermissionOverwrite(read_messages=False)
+            new_overwrites[interaction.guild.default_role] = discord.PermissionOverwrite(read_messages=False)
+            
+            # 确保机器人仍然可以访问频道
+            new_overwrites[interaction.guild.me] = discord.PermissionOverwrite(
+                read_messages=True,
+                send_messages=True,
+                manage_messages=True,
+                manage_channels=True
+            )
             
             # 应用权限覆盖
-            await self.target_channel.edit(overwrites=overwrites)
+            await self.target_channel.edit(overwrites=new_overwrites)
             
             success_embed = discord.Embed(
                 title="✅ 频道归档成功",
                 description=f"**发起人：** <@{self.requester_id}>\n**确认人：** {interaction.user.mention}\n**频道：** {self.target_channel.mention}",
                 color=0x00ff00
             )
-            success_embed.add_field(name="🔒 权限变更", value="该频道已对所有用户隐藏（@everyone不可见）", inline=False)
+            success_embed.add_field(name="🔒 权限变更", value="已清除所有角色权限，频道仅对机器人可见", inline=False)
             
             await interaction.response.edit_message(embed=success_embed, view=None)
             

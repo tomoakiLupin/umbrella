@@ -40,8 +40,12 @@ class DiscordBot(commands.Bot):
         self.logger_manager = Logger(self.config)
         self.logger = self.logger_manager.get_logger()
         
+        # 初始化数据库管理器
+        self.db_manager = DatabaseManager()
+        self.db_manager.migrate_from_json()
+        
         # 初始化管理员管理器
-        self.admin_manager = AdminManager(self.config, self.logger_manager)
+        self.admin_manager = AdminManager(self.config, self.logger_manager, self.db_manager)
         
         # 初始化服主通道管理器
         self.owner_channel_manager = OwnerChannelManager(self.config, self.logger_manager)

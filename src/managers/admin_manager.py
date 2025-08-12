@@ -1,39 +1,69 @@
 import json
 import os
+import sqlite3
 from typing import Set, List, Dict, Optional
 
 class AdminManager:
-    def __init__(self, config, logger):
+    def __init__(self, config, logger, db_manager=None):
         self.config = config
         self.logger = logger.get_logger()
         self.admin_data_file = "admin_data.json"
         self.super_admin_id = config.super_admin_id
         self.admin_roles: Set[int] = set()
+        self.db_manager = db_manager
         self.load_admin_data()
     
     def load_admin_data(self):
+        # 首先尝试从数据库加载
+        if self.db_manager:
+            try:
+                roles = self.db_manager.execute_query("SELECT role_id FROM admin_roles WHERE guild_id = 0")
+                self.admin_roles = set(row['role_id'] for row in roles)
+                self.logger.info(f"Loaded {len(self.admin_roles)} admin roles from database")
+                return
+            except Exception as e:
+                self.logger.error(f"Error loading admin data from database: {e}")
+        
+        # 如果数据库失败或不可用，尝试从JSON文件加载
         if os.path.exists(self.admin_data_file):
             try:
                 with open(self.admin_data_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.admin_roles = set(data.get('admin_roles', []))
-                self.logger.info(f"Loaded {len(self.admin_roles)} admin roles from file")
+                self.logger.info(f"Loaded {len(self.admin_roles)} admin roles from JSON file")
             except Exception as e:
-                self.logger.error(f"Error loading admin data: {e}")
+                self.logger.error(f"Error loading admin data from JSON: {e}")
                 self.admin_roles = set()
         else:
             self.admin_roles = set()
     
     def save_admin_data(self):
+        # 首先尝试保存到数据库
+        if self.db_manager:
+            try:
+                # 清空现有的管理员角色
+                self.db_manager.execute_update("DELETE FROM admin_roles WHERE guild_id = 0")
+                # 插入新的管理员角色
+                for role_id in self.admin_roles:
+                    self.db_manager.execute_insert(
+                        "INSERT OR IGNORE INTO admin_roles (guild_id, role_id, added_by) VALUES (?, ?, ?)",
+                        (0, role_id, 0)
+                    )
+                self.logger.info("Admin data saved successfully to database")
+                return
+            except Exception as e:
+                self.logger.error(f"Error saving admin data to database: {e}")
+        
+        # 如果数据库失败，保存到JSON文件作为备份
         try:
             data = {
                 'admin_roles': list(self.admin_roles)
             }
             with open(self.admin_data_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            self.logger.info("Admin data saved successfully")
+            self.logger.info("Admin data saved successfully to JSON file")
         except Exception as e:
-            self.logger.error(f"Error saving admin data: {e}")
+            self.logger.error(f"Error saving admin data to JSON: {e}")
     
     def is_super_admin(self, user_id: int) -> bool:
         return user_id == self.super_admin_id
