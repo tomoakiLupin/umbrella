@@ -233,9 +233,12 @@ class AdminCommands(commands.Cog):
         
         self.logger.info(f"管理员 {user_id} 创建了角色管理面板：{身份组.name} ({身份组.id})")
     
-    @app_commands.command(name="归档频道", description="清除该频道的所有可视权限，使其对everyone不可见（需要另一位管理员确认）")
-    @app_commands.describe(频道="要归档的频道")
-    async def archive_channel(self, interaction: discord.Interaction, 频道: discord.TextChannel = None):
+    @app_commands.command(name="归档频道", description="清除该频道的所有可视权限并移动到指定分类（需要另一位管理员确认）")
+    @app_commands.describe(
+        频道="要归档的频道",
+        分类="归档后要移动到的分类"
+    )
+    async def archive_channel(self, interaction: discord.Interaction, 分类: discord.CategoryChannel, 频道: discord.TextChannel = None):
         user_id = interaction.user.id
         member_roles = [role.id for role in interaction.user.roles]
         
@@ -251,20 +254,25 @@ class AdminCommands(commands.Cog):
             await interaction.response.send_message("❌ 机器人没有管理该频道的权限！", ephemeral=True)
             return
         
+        # 检查机器人是否有权限在目标分类下操作
+        if not 分类.permissions_for(interaction.guild.me).manage_channels:
+            await interaction.response.send_message("❌ 机器人没有在该分类下管理频道的权限！", ephemeral=True)
+            return
+        
         # 创建确认视图
-        view = ArchiveChannelConfirmView(self, user_id, target_channel)
+        view = ArchiveChannelConfirmView(self, user_id, target_channel, 分类)
         
         embed = discord.Embed(
             title="📦 归档频道确认",
-            description=f"**发起人：** {interaction.user.mention}\n**频道：** {target_channel.mention}",
+            description=f"**发起人：** {interaction.user.mention}\n**频道：** {target_channel.mention}\n**目标分类：** {分类.name}",
             color=0x888888
         )
-        embed.add_field(name="🔒 操作说明", value="该操作会清除频道的所有权限覆盖，使频道完全隐藏（仅机器人可见）", inline=False)
+        embed.add_field(name="🔒 操作说明", value="该操作会清除频道的所有权限覆盖，使频道完全隐藏，并移动到指定分类", inline=False)
         embed.add_field(name="⚠️ 注意", value="需要另一位管理员点击确认按钮才能归档频道", inline=False)
         
         await interaction.response.send_message(embed=embed, view=view)
         
-        self.logger.info(f"管理员 {user_id} 请求归档频道：{target_channel.name} ({target_channel.id})")
+        self.logger.info(f"管理员 {user_id} 请求归档频道：{target_channel.name} ({target_channel.id}) 到分类 {分类.name}")
     
     @app_commands.command(name="移动频道", description="将频道移动到指定的分类下（需要另一位管理员确认）")
     @app_commands.describe(
@@ -630,11 +638,12 @@ class RoleManagementView(discord.ui.View):
             self.logger.error(f"移除角色时发生错误：{e}")
 
 class ArchiveChannelConfirmView(discord.ui.View):
-    def __init__(self, commands_cog, requester_id, target_channel):
+    def __init__(self, commands_cog, requester_id, target_channel, target_category):
         super().__init__(timeout=None)  # 不超时
         self.commands_cog = commands_cog
         self.requester_id = requester_id
         self.target_channel = target_channel
+        self.target_category = target_category
         self.confirmed = False
     
     @discord.ui.button(label="确认归档", style=discord.ButtonStyle.secondary, emoji="📦")
@@ -668,8 +677,14 @@ class ArchiveChannelConfirmView(discord.ui.View):
                 manage_channels=True
             )
             
-            # 应用权限覆盖
-            await self.target_channel.edit(overwrites=new_overwrites)
+            # 获取原分类信息用于日志
+            old_category = self.target_channel.category.name if self.target_channel.category else "无分类"
+            
+            # 同时应用权限覆盖和移动频道到目标分类
+            await self.target_channel.edit(
+                overwrites=new_overwrites,
+                category=self.target_category
+            )
             
             success_embed = discord.Embed(
                 title="✅ 频道归档成功",
@@ -677,10 +692,11 @@ class ArchiveChannelConfirmView(discord.ui.View):
                 color=0x00ff00
             )
             success_embed.add_field(name="🔒 权限变更", value="已清除所有角色权限，频道仅对机器人可见", inline=False)
+            success_embed.add_field(name="📂 分类变更", value=f"{old_category} → {self.target_category.name}", inline=False)
             
             await interaction.response.edit_message(embed=success_embed, view=None)
             
-            self.commands_cog.logger.info(f"管理员 {user_id} 确认归档频道：{self.target_channel.name} ({self.target_channel.id})")
+            self.commands_cog.logger.info(f"管理员 {user_id} 确认归档频道：{self.target_channel.name} ({self.target_channel.id}) 从 '{old_category}' 移动到 '{self.target_category.name}'")
             self.confirmed = True
             
         except discord.Forbidden:
@@ -706,7 +722,7 @@ class ArchiveChannelConfirmView(discord.ui.View):
         )
         
         await interaction.response.edit_message(embed=cancel_embed, view=None)
-        self.commands_cog.logger.info(f"管理员 {user_id} 取消了归档频道请求：{self.target_channel.name}")
+        self.commands_cog.logger.info(f"管理员 {user_id} 取消了归档频道请求：{self.target_channel.name} 到 {self.target_category.name}")
 
 class MoveChannelConfirmView(discord.ui.View):
     def __init__(self, commands_cog, requester_id, target_channel, target_category):
