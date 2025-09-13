@@ -233,7 +233,7 @@ class AdminCommands(commands.Cog):
         
         self.logger.info(f"管理员 {user_id} 创建了角色管理面板：{身份组.name} ({身份组.id})")
     
-    @app_commands.command(name="归档频道", description="清除该频道的所有可视权限并移动到指定分类（需要另一位管理员确认）")
+    @app_commands.command(name="归档频道", description="将频道移动到指定分类并同步权限（需要另一位管理员确认）")
     @app_commands.describe(
         频道="要归档的频道",
         分类="归档后要移动到的分类"
@@ -267,7 +267,7 @@ class AdminCommands(commands.Cog):
             description=f"**发起人：** {interaction.user.mention}\n**频道：** {target_channel.mention}\n**目标分类：** {分类.name}",
             color=0x888888
         )
-        embed.add_field(name="🔒 操作说明", value="该操作会清除频道的所有权限覆盖，使频道完全隐藏，并移动到指定分类", inline=False)
+        embed.add_field(name="🔒 操作说明", value="该操作会将频道移动到指定分类，并将其权限与该分类同步。", inline=False)
         embed.add_field(name="⚠️ 注意", value="需要另一位管理员点击确认按钮才能归档频道", inline=False)
         
         await interaction.response.send_message(embed=embed, view=view)
@@ -663,27 +663,13 @@ class ArchiveChannelConfirmView(discord.ui.View):
         
         # 执行归档
         try:
-            # 清除所有权限覆盖，只保留机器人自身权限
-            new_overwrites = {}
-            
-            # 设置@everyone不可见
-            new_overwrites[interaction.guild.default_role] = discord.PermissionOverwrite(read_messages=False)
-            
-            # 确保机器人仍然可以访问频道
-            new_overwrites[interaction.guild.me] = discord.PermissionOverwrite(
-                read_messages=True,
-                send_messages=True,
-                manage_messages=True,
-                manage_channels=True
-            )
-            
             # 获取原分类信息用于日志
             old_category = self.target_channel.category.name if self.target_channel.category else "无分类"
             
-            # 同时应用权限覆盖和移动频道到目标分类
+            # 移动频道并同步权限
             await self.target_channel.edit(
-                overwrites=new_overwrites,
-                category=self.target_category
+                category=self.target_category,
+                sync_permissions=True
             )
             
             success_embed = discord.Embed(
@@ -691,7 +677,7 @@ class ArchiveChannelConfirmView(discord.ui.View):
                 description=f"**发起人：** <@{self.requester_id}>\n**确认人：** {interaction.user.mention}\n**频道：** {self.target_channel.mention}",
                 color=0x00ff00
             )
-            success_embed.add_field(name="🔒 权限变更", value="已清除所有角色权限，频道仅对机器人可见", inline=False)
+            success_embed.add_field(name="🔒 权限变更", value="频道权限已与目标分类同步", inline=False)
             success_embed.add_field(name="📂 分类变更", value=f"{old_category} → {self.target_category.name}", inline=False)
             
             await interaction.response.edit_message(embed=success_embed, view=None)
