@@ -88,6 +88,18 @@ class DatabaseManager:
                     UNIQUE(guild_id, role_id)
                 )
             ''')
+
+            # 违规频道表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS forbidden_channels (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    channel_id INTEGER NOT NULL,
+                    added_by INTEGER NOT NULL,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(guild_id, channel_id)
+                )
+            ''')
             
             conn.commit()
     

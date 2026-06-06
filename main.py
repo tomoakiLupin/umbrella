@@ -11,6 +11,7 @@ from src.core.logger import Logger
 from src.managers.admin_manager import AdminManager
 from src.managers.owner_channel_manager import OwnerChannelManager
 from src.managers.message_forward_manager import MessageForwardManager
+from src.managers.forbidden_channel_manager import ForbiddenChannelManager
 from src.core.database import DatabaseManager
 
 class DiscordBot(commands.Bot):
@@ -52,6 +53,9 @@ class DiscordBot(commands.Bot):
         
         # 初始化消息转发管理器
         self.message_forward_manager = MessageForwardManager(self.config, self.logger_manager)
+
+        # 初始化违规频道管理器
+        self.forbidden_channel_manager = ForbiddenChannelManager(self.db_manager, self.logger_manager)
         
         # 设置机器人意图
         intents = discord.Intents.default()
@@ -81,6 +85,10 @@ class DiscordBot(commands.Bot):
             # 加载消息转发命令模块
             await self.load_extension('src.commands.message_forward_commands')
             self.logger.info("消息转发命令模块加载完成")
+
+            # 加载违规频道命令模块
+            await self.load_extension('src.commands.forbidden_channel_commands')
+            self.logger.info("违规频道命令模块加载完成")
             
             # 同步斜杠命令
             synced = await self.tree.sync()
@@ -126,14 +134,55 @@ class DiscordBot(commands.Bot):
         # 只忽略自己的消息，防止无限循环
         if message.author.id == self.user.id:
             return
-        
+
+        # 违规频道检测（机器人消息也检测，防止刷屏绕过）
+        if (message.guild and not message.author.bot
+                and hasattr(self, 'forbidden_channel_manager')
+                and self.forbidden_channel_manager.is_forbidden(message.guild.id, message.channel.id)):
+            await self.handle_forbidden_channel(message)
+            return
+
         # 处理消息转发（包括其他机器人的消息）
         if hasattr(self, 'message_forward_manager'):
             await self.handle_message_forward(message)
-        
+
         # 处理命令（只处理非机器人用户的命令）
         if not message.author.bot:
             await self.process_commands(message)
+
+    async def handle_forbidden_channel(self, message):
+        """处理违规频道：删除7天内消息并踢出用户"""
+        import asyncio
+        from datetime import datetime, timezone, timedelta
+
+        member = message.author
+        guild = message.guild
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        self.logger.info(f"违规频道触发：用户 {member.id} ({member.name}) 在频道 {message.channel.id}")
+
+        # 删除该用户在所有频道7天内的消息
+        for channel in guild.text_channels:
+            try:
+                if not channel.permissions_for(guild.me).manage_messages:
+                    continue
+                await channel.purge(
+                    after=cutoff,
+                    check=lambda m, uid=member.id: m.author.id == uid,
+                    limit=None,
+                    bulk=True
+                )
+            except Exception as e:
+                self.logger.error(f"清除频道 {channel.id} 消息时出错: {e}")
+
+        # 踢出用户
+        try:
+            await member.kick(reason="在违规频道发言")
+            self.logger.info(f"已踢出用户 {member.id} ({member.name})")
+        except discord.Forbidden:
+            self.logger.error(f"踢出用户 {member.id} 失败：权限不足")
+        except Exception as e:
+            self.logger.error(f"踢出用户 {member.id} 时出错: {e}")
     
     async def handle_message_forward(self, message):
         """处理消息转发"""
