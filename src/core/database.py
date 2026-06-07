@@ -100,6 +100,22 @@ class DatabaseManager:
                     UNIQUE(guild_id, channel_id)
                 )
             ''')
+
+            # 违规踢出历史记录表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS forbidden_kick_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    user_name TEXT NOT NULL,
+                    channel_id INTEGER NOT NULL,
+                    channel_name TEXT NOT NULL,
+                    message_content TEXT,
+                    deleted_count INTEGER DEFAULT 0,
+                    kicked INTEGER DEFAULT 1,
+                    kicked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
             conn.commit()
     

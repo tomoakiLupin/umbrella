@@ -67,5 +67,36 @@ class ForbiddenChannelCommands(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @app_commands.command(name="违规踢出记录", description="查看最近的违规踢出记录（管理员可用）")
+    @app_commands.describe(数量="查看条数，最多20条")
+    async def view_kick_logs(self, interaction: discord.Interaction, 数量: int = 10):
+        member_roles = [role.id for role in interaction.user.roles]
+        if not self.admin_manager.can_use_admin_commands(interaction.user.id, member_roles):
+            await interaction.response.send_message("❌ 您没有权限执行此命令！", ephemeral=True)
+            return
+
+        数量 = max(1, min(数量, 20))
+        logs = self.forbidden_manager.get_kick_logs(interaction.guild.id, 数量)
+
+        if not logs:
+            await interaction.response.send_message("📋 暂无踢出记录。", ephemeral=True)
+            return
+
+        embed = discord.Embed(title=f"🚫 违规踢出记录（最近 {len(logs)} 条）", color=0xff0000)
+
+        for log in logs:
+            kicked_str = "✅ 已踢出" if log['kicked'] else "❌ 踢出失败"
+            embed.add_field(
+                name=f"{log['user_name']} — {log['kicked_at'][:16]}",
+                value=(
+                    f"**频道：** #{log['channel_name']}\n"
+                    f"**内容：** {log['message_content'][:80]}{'...' if len(log['message_content']) > 80 else ''}\n"
+                    f"**清除消息：** {log['deleted_count']} 条　**结果：** {kicked_str}"
+                ),
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(ForbiddenChannelCommands(bot))

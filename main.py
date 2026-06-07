@@ -152,38 +152,56 @@ class DiscordBot(commands.Bot):
 
     async def handle_forbidden_channel(self, message):
         """处理违规频道：删除7天内消息并踢出用户"""
-        import asyncio
         from datetime import datetime, timezone, timedelta
 
         member = message.author
         guild = message.guild
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        trigger_content = message.content[:200] if message.content else "（无文字内容）"
+        trigger_channel = message.channel
 
         self.logger.info(f"违规频道触发：用户 {member.id} ({member.name}) 在频道 {message.channel.id}")
 
         # 删除该用户在所有频道7天内的消息
+        deleted_count = 0
         for channel in guild.text_channels:
             try:
                 if not channel.permissions_for(guild.me).manage_messages:
                     continue
-                await channel.purge(
+                deleted = await channel.purge(
                     after=cutoff,
                     check=lambda m, uid=member.id: m.author.id == uid,
                     limit=None,
                     bulk=True
                 )
+                deleted_count += len(deleted)
             except Exception as e:
                 self.logger.error(f"清除频道 {channel.id} 消息时出错: {e}")
 
         # 踢出用户
+        kicked = False
         try:
             await member.kick(reason="在违规频道发言")
+            kicked = True
             self.logger.info(f"已踢出用户 {member.id} ({member.name})")
         except discord.Forbidden:
             self.logger.error(f"踢出用户 {member.id} 失败：权限不足")
         except Exception as e:
             self.logger.error(f"踢出用户 {member.id} 时出错: {e}")
-    
+
+        # 保存踢出记录
+        self.forbidden_channel_manager.add_kick_log(
+            guild_id=guild.id,
+            user_id=member.id,
+            user_name=str(member),
+            channel_id=trigger_channel.id,
+            channel_name=trigger_channel.name,
+            message_content=trigger_content,
+            deleted_count=deleted_count,
+            kicked=kicked
+        )
+
+
     async def handle_message_forward(self, message):
         """处理消息转发"""
         try:

@@ -40,3 +40,24 @@ class ForbiddenChannelManager:
             (guild_id, channel_id)
         )
         return len(rows) > 0
+
+    def add_kick_log(self, guild_id: int, user_id: int, user_name: str,
+                     channel_id: int, channel_name: str, message_content: str,
+                     deleted_count: int, kicked: bool):
+        try:
+            self.db_manager.execute_insert(
+                """INSERT INTO forbidden_kick_logs
+                   (guild_id, user_id, user_name, channel_id, channel_name, message_content, deleted_count, kicked)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (guild_id, user_id, user_name, channel_id, channel_name,
+                 message_content, deleted_count, 1 if kicked else 0)
+            )
+        except Exception as e:
+            self.logger.error(f"保存踢出记录失败: {e}")
+
+    def get_kick_logs(self, guild_id: int, limit: int = 10) -> list:
+        return self.db_manager.execute_query(
+            """SELECT * FROM forbidden_kick_logs WHERE guild_id = ?
+               ORDER BY kicked_at DESC LIMIT ?""",
+            (guild_id, limit)
+        )
