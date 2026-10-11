@@ -60,7 +60,6 @@ class DiscordBot(commands.Bot):
         # 设置机器人意图
         intents = discord.Intents.default()
         intents.message_content = True
-        intents.members = True
         
         # 初始化机器人
         super().__init__(
@@ -163,8 +162,16 @@ class DiscordBot(commands.Bot):
         self.logger.info(f"违规频道触发：用户 {member.id} ({member.name}) 在频道 {message.channel.id}")
 
         # 删除该用户在所有频道7天内的消息
+        # 用 fetch_channels() 实时拉取频道列表，避免 guild.text_channels 缓存漏掉新建的频道
         deleted_count = 0
-        for channel in guild.text_channels:
+        try:
+            all_channels = await guild.fetch_channels()
+            text_channels = [c for c in all_channels if isinstance(c, discord.TextChannel)]
+        except Exception as e:
+            self.logger.error(f"拉取频道列表时出错，回退使用缓存: {e}")
+            text_channels = guild.text_channels
+
+        for channel in text_channels:
             try:
                 if not channel.permissions_for(guild.me).manage_messages:
                     continue

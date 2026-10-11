@@ -577,28 +577,23 @@ class RoleManagementView(discord.ui.View):
     
     @discord.ui.button(label="领取角色", style=discord.ButtonStyle.primary, emoji="➕")
     async def add_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user = interaction.user
-        member = interaction.guild.get_member(user.id)
-        
-        if not member:
-            await interaction.response.send_message("❌ 无法找到您的成员信息！", ephemeral=True)
-            return
-        
+        member = interaction.user
+
         # 检查用户是否已经拥有该角色
         if self.role in member.roles:
             await interaction.response.send_message(f"⚠️ 您已经拥有 {self.role.mention} 角色了！", ephemeral=True)
             return
-        
+
         # 检查机器人是否有权限管理该角色
         if self.role.position >= interaction.guild.me.top_role.position:
             await interaction.response.send_message("❌ 机器人无法管理该角色，请联系管理员！", ephemeral=True)
             return
-        
+
         try:
             # 添加角色
             await member.add_roles(self.role)
             await interaction.response.send_message(f"✅ 成功为您添加了 {self.role.mention} 角色！", ephemeral=True)
-            self.logger.info(f"用户 {user.id} ({user.name}) 通过角色管理面板添加了角色 {self.role.name} ({self.role.id})")
+            self.logger.info(f"用户 {member.id} ({member.name}) 通过角色管理面板添加了角色 {self.role.name} ({self.role.id})")
             
         except discord.Forbidden:
             await interaction.response.send_message("❌ 机器人没有权限管理该角色！", ephemeral=True)
@@ -608,28 +603,23 @@ class RoleManagementView(discord.ui.View):
     
     @discord.ui.button(label="移除角色", style=discord.ButtonStyle.secondary, emoji="➖")
     async def remove_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user = interaction.user
-        member = interaction.guild.get_member(user.id)
-        
-        if not member:
-            await interaction.response.send_message("❌ 无法找到您的成员信息！", ephemeral=True)
-            return
-        
+        member = interaction.user
+
         # 检查用户是否拥有该角色
         if self.role not in member.roles:
             await interaction.response.send_message(f"⚠️ 您没有 {self.role.mention} 角色！", ephemeral=True)
             return
-        
+
         # 检查机器人是否有权限管理该角色
         if self.role.position >= interaction.guild.me.top_role.position:
             await interaction.response.send_message("❌ 机器人无法管理该角色，请联系管理员！", ephemeral=True)
             return
-        
+
         try:
             # 移除角色
             await member.remove_roles(self.role)
             await interaction.response.send_message(f"✅ 成功为您移除了 {self.role.mention} 角色！", ephemeral=True)
-            self.logger.info(f"用户 {user.id} ({user.name}) 通过角色管理面板移除了角色 {self.role.name} ({self.role.id})")
+            self.logger.info(f"用户 {member.id} ({member.name}) 通过角色管理面板移除了角色 {self.role.name} ({self.role.id})")
             
         except discord.Forbidden:
             await interaction.response.send_message("❌ 机器人没有权限管理该角色！", ephemeral=True)

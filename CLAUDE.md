@@ -149,7 +149,7 @@ The owner channel system has been migrated from JSON files to SQLite database fo
 
 - The bot uses Chinese language for user-facing commands and messages
 - All admin operations are logged with detailed information
-- Bot requires message_content and members intents to function properly
+- Bot requires the message_content privileged intent (for content forwarding and archive export); member lookups use on-demand `guild.fetch_member()` REST calls instead of the members intent
 - Error handling includes Discord permission and rate limit scenarios
 - Configuration validation prevents startup with default/invalid tokens
 - Owner channel system stores configuration dynamically via commands (not config file)

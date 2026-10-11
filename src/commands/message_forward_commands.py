@@ -66,7 +66,10 @@ class MessageForwardCommands(commands.Cog):
             return
         
         # 检查用户对源频道的权限
-        source_member = source_channel.guild.get_member(user_id)
+        try:
+            source_member = await source_channel.guild.fetch_member(user_id)
+        except discord.NotFound:
+            source_member = None
         if not source_member or not self.forward_manager.can_access_channel(source_channel, source_member):
             await interaction.response.send_message("❌ 您没有访问源频道的权限！", ephemeral=True)
             return

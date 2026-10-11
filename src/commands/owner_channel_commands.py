@@ -8,6 +8,13 @@ import html
 from datetime import datetime
 import io
 
+async def safe_fetch_member(guild, user_id):
+    """按需通过 REST 获取成员，避免依赖 Members Intent 的本地缓存"""
+    try:
+        return await guild.fetch_member(user_id)
+    except (discord.NotFound, discord.HTTPException):
+        return None
+
 def parse_iso_datetime(iso_string):
     """解析ISO格式的日期时间字符串"""
     try:
@@ -368,7 +375,7 @@ class OwnerChannelCommands(commands.Cog):
             
             user_list = []
             for blacklisted_user_id in blacklist[:20]:  # 最多显示20个
-                user = interaction.guild.get_member(blacklisted_user_id)
+                user = await safe_fetch_member(interaction.guild, blacklisted_user_id)
                 if user:
                     user_list.append(f"• {user.mention} ({user.display_name}) - ID: {blacklisted_user_id}")
                 else:
@@ -469,8 +476,7 @@ class OwnerChannelPanelView(discord.ui.View):
         
         # 检查用户资格
         user_roles = [role.id for role in interaction.user.roles]
-        member = interaction.guild.get_member(interaction.user.id)
-        join_date = member.joined_at if member else discord.utils.utcnow()
+        join_date = interaction.user.joined_at or discord.utils.utcnow()
         
         eligible, reason = self.owner_channel_manager.check_user_eligibility(
             interaction.guild.id, 
@@ -520,7 +526,7 @@ class ComplaintModal(discord.ui.Modal, title="提交投诉/意见"):
             
             # 获取审核频道和服主
             review_channel = interaction.guild.get_channel(self.panel_config["review_channel_id"])
-            owner = interaction.guild.get_member(self.panel_config["owner_id"])
+            owner = await safe_fetch_member(interaction.guild, self.panel_config["owner_id"])
             
             if not review_channel:
                 await interaction.response.send_message("❌ 找不到审核频道！", ephemeral=True)
@@ -542,9 +548,13 @@ class ComplaintModal(discord.ui.Modal, title="提交投诉/意见"):
                 value=str(self.complaint_content)[:1000] + ("..." if len(str(self.complaint_content)) > 1000 else ""),
                 inline=False
             )
+            joined_at = interaction.user.joined_at
+            joined_at_text = f"<t:{int(joined_at.timestamp())}:F>" if joined_at else "未知"
+            role_names = [role.name for role in interaction.user.roles if role.name != '@everyone'][:3]
+            role_text = ', '.join(role_names) if role_names else "无"
             review_embed.add_field(
                 name="👤 用户信息",
-                value=f"加入时间：<t:{int(interaction.user.joined_at.timestamp())}:F>\n身份组：{', '.join([role.name for role in interaction.user.roles if role.name != '@everyone'][:3])}",
+                value=f"加入时间：{joined_at_text}\n身份组：{role_text}",
                 inline=False
             )
             
@@ -601,7 +611,7 @@ class ReviewRequestView(discord.ui.View):
         
         # 创建服主通道
         try:
-            user = interaction.guild.get_member(request_info["user_id"])
+            user = await safe_fetch_member(interaction.guild, request_info["user_id"])
             if not user:
                 await interaction.response.send_message("❌ 找不到申请用户！", ephemeral=True)
                 return
@@ -732,7 +742,7 @@ class ReviewRequestView(discord.ui.View):
             await interaction.response.send_message("❌ 申请记录不存在！", ephemeral=True)
             return
         
-        user = interaction.guild.get_member(request_info["user_id"])
+        user = await safe_fetch_member(interaction.guild, request_info["user_id"])
         
         # 更新审核消息
         user_display = user.mention if user else f"用户ID: {request_info['user_id']}"
@@ -773,7 +783,7 @@ class ReviewRequestView(discord.ui.View):
             await interaction.response.send_message("❌ 该用户已在黑名单中！", ephemeral=True)
             return
         
-        user = interaction.guild.get_member(request_info["user_id"])
+        user = await safe_fetch_member(interaction.guild, request_info["user_id"])
         
         # 更新审核消息
         user_display = user.mention if user else f"用户ID: {request_info['user_id']}"
@@ -814,7 +824,7 @@ class RejectReasonModal(discord.ui.Modal, title="拒绝申请"):
             await interaction.response.send_message("❌ 申请记录不存在！", ephemeral=True)
             return
         
-        user = interaction.guild.get_member(request_info["user_id"])
+        user = await safe_fetch_member(interaction.guild, request_info["user_id"])
         
         # 私聊用户告知拒绝原因
         try:
@@ -1066,7 +1076,7 @@ class ArchiveConfirmView(discord.ui.View):
             """
         
         # 填充模板
-        user = self.channel.guild.get_member(self.channel_info['user_id'])
+        user = await safe_fetch_member(self.channel.guild, self.channel_info['user_id'])
         user_name = html.escape(user.display_name if user else f"用户ID: {self.channel_info['user_id']}")
         
         time_range = "无消息" if not messages else f"{messages[0].created_at.strftime('%Y-%m-%d %H:%M:%S')} - {messages[-1].created_at.strftime('%Y-%m-%d %H:%M:%S')}"

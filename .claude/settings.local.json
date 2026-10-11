@@ -6,7 +6,9 @@
       "Bash(rm:*)",
       "Bash(mkdir:*)",
       "Bash(mv:*)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "WebFetch(domain:docs.discord.com)",
+      "Bash(python -m py_compile main.py src/commands/commands.py src/commands/owner_channel_commands.py src/commands/message_forward_commands.py)"
     ],
     "deny": []
   }
