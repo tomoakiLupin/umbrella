@@ -166,12 +166,12 @@ class DiscordBot(commands.Bot):
         deleted_count = 0
         try:
             all_channels = await guild.fetch_channels()
-            text_channels = [c for c in all_channels if isinstance(c, discord.TextChannel)]
+            purge_channels = [c for c in all_channels if isinstance(c, (discord.TextChannel, discord.VoiceChannel))]
         except Exception as e:
             self.logger.error(f"拉取频道列表时出错，回退使用缓存: {e}")
-            text_channels = guild.text_channels
+            purge_channels = list(guild.text_channels) + list(guild.voice_channels)
 
-        for channel in text_channels:
+        for channel in purge_channels:
             try:
                 if not channel.permissions_for(guild.me).manage_messages:
                     continue
